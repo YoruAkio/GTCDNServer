@@ -1,8 +1,19 @@
+<div align="center">
+
 # GTCDN Server
 
-GTCDN is a TanStack Start app that runs on Cloudflare Workers, stores auth data in D1, and stores uploaded files in R2.
+GTCDN is a TanStack Start app for managing Growtopia private server cache files on Cloudflare Workers, with Better Auth on D1 and file storage on R2.
 
-## Local setup
+</div>
+
+## Features
+
+- Cloudflare Workers runtime with TanStack Start
+- Better Auth with D1-backed sessions and users
+- R2-backed file storage with folders, drag-and-drop upload, and file moves
+- Admin-only dashboard for managing cache assets
+
+## Local Development
 
 1. Install dependencies:
 
@@ -10,53 +21,50 @@ GTCDN is a TanStack Start app that runs on Cloudflare Workers, stores auth data 
 bun install
 ```
 
-2. Create the local D1 schema:
-
-```bash
-bunx wrangler d1 execute gtcdn-db --local --file=migrations/schema.sql
-```
-
-3. Start the local Worker:
+2. Start the app:
 
 ```bash
 bun run dev
 ```
 
-The app runs at `http://localhost:3000`.
+3. Open `http://localhost:3000`
 
-## Local login
+Local auth tables and the default admin account are created automatically when auth is first used.
+
+## Default Login
 
 - Username: `admin`
-- Default password: `admin123`
+- Password: `admin123`
 
-The admin account is seeded automatically on the first auth request.
+After signing in with the default password, the dashboard forces you to change it before continuing.
 
-## Cloudflare setup
+## Cloudflare Deployment
 
-1. Create a D1 database:
+1. Create the D1 database:
 
 ```bash
 bunx wrangler d1 create gtcdn-db
 ```
 
-2. Create an R2 bucket:
+2. Create the R2 bucket:
 
 ```bash
 bunx wrangler r2 bucket create gtcdn-files
 ```
 
-3. Update `wrangler.jsonc` with the real `database_id` returned by the D1 create command.
+3. Update `wrangler.jsonc` with the real D1 `database_id`
 
-4. Apply the schema to the remote D1 database:
+4. Apply the schema to remote D1:
 
 ```bash
 bunx wrangler d1 execute gtcdn-db --remote --file=migrations/schema.sql
 ```
 
-5. Set a Better Auth secret for the Worker:
+5. Set Worker secrets:
 
 ```bash
 bunx wrangler secret put BETTER_AUTH_SECRET
+bunx wrangler secret put BETTER_AUTH_URL
 ```
 
 6. Deploy:
@@ -65,10 +73,14 @@ bunx wrangler secret put BETTER_AUTH_SECRET
 bun run deploy
 ```
 
-After deploy, Cloudflare will print the `*.workers.dev` URL for your app.
+After deployment, Cloudflare prints your `*.workers.dev` URL.
 
 ## Notes
 
-- Runtime entrypoint is configured in `wrangler.jsonc` via `@tanstack/react-start/server-entry`.
-- Cloudflare bindings are read from `cloudflare:workers` only in server-only modules.
-- Uploaded files use the `R2_DB` R2 binding and auth uses the `DB` D1 binding.
+- Worker entry is configured in `wrangler.jsonc` with `@tanstack/react-start/server-entry`
+- `cloudflare:workers` imports stay in server-only modules
+- Auth uses the `D1_DB` D1 binding and storage uses the `R2_DB` R2 binding
+
+## License
+
+This project is licensed under the MIT License. See `LICENSE` for details.
