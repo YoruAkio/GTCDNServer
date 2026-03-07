@@ -29,10 +29,7 @@ function Modal({
   dismissible?: boolean;
   children: React.ReactNode;
 }) {
-  const value = React.useMemo(
-    () => ({ dismissible, onOpenChange }),
-    [dismissible, onOpenChange],
-  );
+  const value = React.useMemo(() => ({ dismissible, onOpenChange }), [dismissible, onOpenChange]);
 
   React.useEffect(() => {
     if (!open || !dismissible) return;

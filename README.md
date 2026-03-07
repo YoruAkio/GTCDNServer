@@ -54,10 +54,11 @@ bunx wrangler r2 bucket create gtcdn-files
 
 3. Update `wrangler.jsonc` with the real D1 `database_id`
 
-4. Apply the schema to remote D1:
+4. Apply migrations to remote D1:
 
 ```bash
-bunx wrangler d1 execute gtcdn-db --remote --file=migrations/schema.sql
+bunx wrangler d1 execute gt-cdn --remote --file=migrations/000_initial_schema.sql
+bunx wrangler d1 execute gt-cdn --remote --file=migrations/001_add_folder_table.sql
 ```
 
 5. Set Worker secrets:
@@ -80,6 +81,7 @@ After deployment, Cloudflare prints your `*.workers.dev` URL.
 - Worker entry is configured in `wrangler.jsonc` with `@tanstack/react-start/server-entry`
 - `cloudflare:workers` imports stay in server-only modules
 - Auth uses the `D1_DB` D1 binding and storage uses the `R2_DB` R2 binding
+- For a fresh database, run all migration files in order from `migrations/`
 
 ## License
 

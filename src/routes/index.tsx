@@ -37,9 +37,9 @@ function HomePage() {
             CDN for Growtopia private servers
           </h1>
           <p className="text-lg leading-8 text-muted-foreground max-w-2xl">
-            GTCDN lets GTPS developers self-host their cache files on
-            Cloudflare's edge — no subscription, no third-party dependency. Just
-            deploy, point your server, and keep your cache private.
+            GTCDN lets GTPS developers self-host their cache files on Cloudflare's edge — no
+            subscription, no third-party dependency. Just deploy, point your server, and keep your
+            cache private.
           </p>
           <div className="flex gap-3 pt-1">
             <Button render={<a href="/admin" />} size="default">
@@ -51,25 +51,18 @@ function HomePage() {
 
         {/* feature list */}
         <section className="space-y-1">
-          {features.map(f => {
+          {features.map((f) => {
             const Icon = f.icon;
             return (
-              <div
-                key={f.title}
-                className="flex gap-5 py-5 border-b border-border last:border-0"
-              >
+              <div key={f.title} className="flex gap-5 py-5 border-b border-border last:border-0">
                 <div className="shrink-0 mt-0.5">
                   <div className="flex size-9 items-center justify-center rounded-lg bg-primary/15 text-primary">
                     <Icon className="size-4" strokeWidth={1.75} />
                   </div>
                 </div>
                 <div className="space-y-1 min-w-0">
-                  <p className="text-sm font-semibold text-foreground">
-                    {f.title}
-                  </p>
-                  <p className="text-sm leading-6 text-muted-foreground">
-                    {f.description}
-                  </p>
+                  <p className="text-sm font-semibold text-foreground">{f.title}</p>
+                  <p className="text-sm leading-6 text-muted-foreground">{f.description}</p>
                 </div>
               </div>
             );

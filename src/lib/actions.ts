@@ -138,21 +138,15 @@ export const createFolderAction = createServerFn({ method: "POST" })
   });
 
 export const moveFileAction = createServerFn({ method: "POST" })
-  .inputValidator(
-    (input: { sourceKey: string; destinationPrefix: string }) => input,
-  )
-  .handler(
-    async ({
-      data: { sourceKey, destinationPrefix },
-    }): Promise<{ key: string }> => {
-      await requireAuth();
+  .inputValidator((input: { sourceKey: string; destinationPrefix: string }) => input)
+  .handler(async ({ data: { sourceKey, destinationPrefix } }): Promise<{ key: string }> => {
+    await requireAuth();
 
-      if (sourceKey.endsWith("/")) {
-        throw new Error("Only files can be moved");
-      }
+    if (sourceKey.endsWith("/")) {
+      throw new Error("Only files can be moved");
+    }
 
-      const { moveFile } = await import("@/lib/storage.server");
-      const key = await moveFile(sourceKey, destinationPrefix);
-      return { key };
-    },
-  );
+    const { moveFile } = await import("@/lib/storage.server");
+    const key = await moveFile(sourceKey, destinationPrefix);
+    return { key };
+  });

@@ -4,6 +4,12 @@ import { env } from "cloudflare:workers";
 
 import type { FolderOption, StorageObject } from "./storage";
 
+function getDatabase(): D1Database {
+  const d1 = (env as any).D1_DB as D1Database | undefined;
+  if (!d1) throw new Error("D1_DB binding not found");
+  return d1;
+}
+
 function getBucket(): R2Bucket {
   const bucket = (env as any).R2_DB as R2Bucket | undefined;
   if (!bucket) throw new Error("R2_DB binding not found");
@@ -13,6 +19,12 @@ function getBucket(): R2Bucket {
 function normalizePrefix(prefix: string) {
   const trimmed = prefix.trim().replace(/^\/+|\/+$/g, "");
   return trimmed ? `${trimmed}/` : "";
+}
+
+function getFolderChain(path: string) {
+  const normalized = normalizePrefix(path);
+  const parts = normalized.split("/").filter(Boolean);
+  return parts.map((_, index) => `${parts.slice(0, index + 1).join("/")}/`);
 }
 
 function sortEntries(entries: StorageObject[]) {
@@ -33,13 +45,41 @@ async function listAllKeys(prefix = "") {
 
   while (true) {
     const listed = await bucket.list({ prefix: normalizedPrefix, cursor });
-    keys.push(...listed.objects.map(object => object.key));
+    keys.push(...listed.objects.map((object) => object.key));
 
     if (!listed.truncated) break;
     cursor = listed.cursor;
   }
 
   return keys;
+}
+
+async function upsertFolders(paths: string[]) {
+  if (paths.length === 0) return;
+
+  const d1 = getDatabase();
+  const now = new Date().toISOString();
+
+  await d1.batch(
+    paths.map((path) =>
+      d1
+        .prepare(
+          "insert into folder (path, createdAt, updatedAt) values (?1, ?2, ?3) on conflict(path) do update set updatedAt = excluded.updatedAt",
+        )
+        .bind(path, now, now),
+    ),
+  );
+}
+
+async function removeFoldersByPrefix(prefix: string) {
+  const d1 = getDatabase();
+  const normalizedPrefix = normalizePrefix(prefix);
+  if (!normalizedPrefix) return;
+
+  await d1
+    .prepare("delete from folder where path = ?1 or path like ?2")
+    .bind(normalizedPrefix, `${normalizedPrefix}%`)
+    .run();
 }
 
 export async function listFiles(prefix = ""): Promise<StorageObject[]> {
@@ -50,21 +90,17 @@ export async function listFiles(prefix = ""): Promise<StorageObject[]> {
     delimiter: "/",
   });
 
-  const folders = (listed.delimitedPrefixes ?? []).map<StorageObject>(
-    folderKey => ({
-      key: folderKey,
-      name: folderKey.slice(normalizedPrefix.length).replace(/\/$/, ""),
-      size: 0,
-      uploaded: new Date(0).toISOString(),
-      isFolder: true,
-    }),
-  );
+  const folders = (listed.delimitedPrefixes ?? []).map<StorageObject>((folderKey) => ({
+    key: folderKey,
+    name: folderKey.slice(normalizedPrefix.length).replace(/\/$/, ""),
+    size: 0,
+    uploaded: new Date(0).toISOString(),
+    isFolder: true,
+  }));
 
   const files = listed.objects
-    .filter(
-      object => object.key !== normalizedPrefix && !object.key.endsWith("/"),
-    )
-    .map<StorageObject>(object => ({
+    .filter((object) => object.key !== normalizedPrefix && !object.key.endsWith("/"))
+    .map<StorageObject>((object) => ({
       key: object.key,
       name: object.key.slice(normalizedPrefix.length),
       size: object.size,
@@ -76,30 +112,18 @@ export async function listFiles(prefix = ""): Promise<StorageObject[]> {
 }
 
 export async function listFolders(): Promise<FolderOption[]> {
-  const keys = await listAllKeys();
-  const folders = new Set<string>([""]);
+  const d1 = getDatabase();
+  const folders = await d1
+    .prepare("select path from folder order by path asc")
+    .all<{ path: string }>();
 
-  for (const key of keys) {
-    const cleanKey = key.endsWith("/") ? key.slice(0, -1) : key;
-    const parts = cleanKey.split("/").filter(Boolean);
-
-    if (key.endsWith("/")) {
-      folders.add(`${cleanKey}/`);
-    }
-
-    for (let index = 1; index < parts.length; index += 1) {
-      folders.add(`${parts.slice(0, index).join("/")}/`);
-    }
-  }
-
-  return [...folders]
-    .map<FolderOption>(key => ({
-      key,
-      name: key ? key.slice(0, -1) : "Root",
-    }))
-    .sort((a, b) =>
-      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
-    );
+  return [
+    { key: "", name: "Root" },
+    ...((folders.results ?? []).map((folder) => ({
+      key: folder.path,
+      name: folder.path.slice(0, -1),
+    })) as FolderOption[]),
+  ];
 }
 
 export async function uploadFile(
@@ -109,13 +133,18 @@ export async function uploadFile(
 ): Promise<void> {
   const bucket = getBucket();
   await bucket.put(key, body, { httpMetadata: { contentType } });
+  await upsertFolders(getFolderChain(key));
 }
 
 export async function createFolder(key: string): Promise<void> {
   const bucket = getBucket();
-  await bucket.put(key, new Uint8Array(0), {
+  const normalizedKey = normalizePrefix(key);
+
+  await bucket.put(normalizedKey, new Uint8Array(0), {
     httpMetadata: { contentType: "application/x-directory" },
   });
+
+  await upsertFolders(getFolderChain(normalizedKey));
 }
 
 export async function deleteFile(key: string): Promise<void> {
@@ -124,16 +153,14 @@ export async function deleteFile(key: string): Promise<void> {
     const keys = await listAllKeys(key);
     const deleteKeys = keys.length > 0 ? keys : [key];
     await bucket.delete(deleteKeys as any);
+    await removeFoldersByPrefix(key);
     return;
   }
 
   await bucket.delete(key);
 }
 
-export async function moveFile(
-  sourceKey: string,
-  destinationPrefix: string,
-): Promise<string> {
+export async function moveFile(sourceKey: string, destinationPrefix: string): Promise<string> {
   const bucket = getBucket();
   const normalizedPrefix = normalizePrefix(destinationPrefix);
   const fileName = sourceKey.split("/").pop();
@@ -152,12 +179,12 @@ export async function moveFile(
 
   await bucket.put(nextKey, object.body, {
     httpMetadata: {
-      contentType:
-        object.httpMetadata?.contentType || "application/octet-stream",
+      contentType: object.httpMetadata?.contentType || "application/octet-stream",
     },
   });
 
   await bucket.delete(sourceKey);
+  await upsertFolders(getFolderChain(nextKey));
 
   return nextKey;
 }

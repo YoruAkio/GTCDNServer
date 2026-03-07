@@ -51,9 +51,8 @@ export const Route = createFileRoute("/_admin/admin")({
     meta: [{ title: "Admin — GTCDN" }],
   }),
   loader: async ({ deps }) => {
-    const [files, folders, passwordStatus, session] = await Promise.all([
+    const [files, passwordStatus, session] = await Promise.all([
       listFilesAction({ data: deps.path }),
-      listFoldersAction(),
       getPasswordStatusAction(),
       getSession(),
     ]);
@@ -61,7 +60,6 @@ export const Route = createFileRoute("/_admin/admin")({
     return {
       currentPath: deps.path,
       files,
-      folders,
       requiresPasswordChange: passwordStatus.requiresPasswordChange,
       session,
     };
@@ -110,10 +108,8 @@ function AdminPage() {
   const data = Route.useLoaderData();
 
   const [files, setFiles] = useState<StorageObject[]>(data.files);
-  const [folders, setFolders] = useState<FolderOption[]>(data.folders);
-  const [requiresPasswordChange, setRequiresPasswordChange] = useState(
-    data.requiresPasswordChange,
-  );
+  const [folders, setFolders] = useState<FolderOption[]>([]);
+  const [requiresPasswordChange, setRequiresPasswordChange] = useState(data.requiresPasswordChange);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [draggingFileKey, setDraggingFileKey] = useState<string | null>(null);
@@ -142,10 +138,6 @@ function AdminPage() {
   }, [data.files]);
 
   useEffect(() => {
-    setFolders(data.folders);
-  }, [data.folders]);
-
-  useEffect(() => {
     setRequiresPasswordChange(data.requiresPasswordChange);
   }, [data.requiresPasswordChange]);
 
@@ -153,13 +145,14 @@ function AdminPage() {
   const breadcrumbs = getBreadcrumbs(currentPath);
 
   async function refresh() {
-    const [nextFiles, nextFolders] = await Promise.all([
-      listFilesAction({ data: currentPath }),
-      listFoldersAction(),
-    ]);
-
+    const nextFiles = await listFilesAction({ data: currentPath });
     setFiles(nextFiles);
+  }
+
+  async function loadFolders() {
+    const nextFolders = await listFoldersAction();
     setFolders(nextFolders);
+    return nextFolders;
   }
 
   async function navigateToPath(path: string) {
@@ -241,6 +234,11 @@ function AdminPage() {
 
     try {
       await deleteFileAction({ data: key });
+      if (key.endsWith("/")) {
+        setFolders((prev) =>
+          prev.filter((folder) => !(folder.key === key || folder.key.startsWith(key))),
+        );
+      }
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
@@ -269,10 +267,11 @@ function AdminPage() {
     setFolderModalOpen(true);
   }
 
-  function openMoveModal(fileKey: string) {
+  async function openMoveModal(fileKey: string) {
     setMoveError(null);
     setMoveFileKey(fileKey);
     setMoveDestination(currentPath);
+    await loadFolders();
     setMoveModalOpen(true);
   }
 
@@ -289,6 +288,11 @@ function AdminPage() {
         },
       });
       setFolderModalOpen(false);
+      setFolders((prev) => {
+        const nextKey = `${currentPath ? `${currentPath}/` : ""}${folderName.trim().replace(/^\/+|\/+$/g, "")}/`;
+        if (!nextKey || prev.some((folder) => folder.key === nextKey)) return prev;
+        return [...prev, { key: nextKey, name: nextKey.slice(0, -1) }];
+      });
       await refresh();
     } catch (err) {
       setFolderError(err instanceof Error ? err.message : "Failed to create folder");
@@ -368,7 +372,12 @@ function AdminPage() {
             </div>
 
             {!requiresPasswordChange && (
-              <Button type="button" variant="ghost" size="sm" onClick={() => setPasswordModalOpen(false)}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setPasswordModalOpen(false)}
+              >
                 Close
               </Button>
             )}
@@ -411,12 +420,16 @@ function AdminPage() {
             <div className="space-y-2">
               <ModalTitle>Create folder</ModalTitle>
               <ModalDescription>
-                Create a folder in the current location. Nested names like `cache/images`
-                also work.
+                Create a folder in the current location. Nested names like `cache/images` also work.
               </ModalDescription>
             </div>
 
-            <Button type="button" variant="ghost" size="sm" onClick={() => setFolderModalOpen(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setFolderModalOpen(false)}
+            >
               Close
             </Button>
           </ModalHeader>
@@ -469,7 +482,10 @@ function AdminPage() {
           <form onSubmit={handleMoveFile}>
             <ModalBody>
               <div className="space-y-2">
-                <label htmlFor="move-destination" className="block text-sm font-medium text-foreground">
+                <label
+                  htmlFor="move-destination"
+                  className="block text-sm font-medium text-foreground"
+                >
                   Destination folder
                 </label>
                 <select
@@ -585,14 +601,20 @@ function AdminPage() {
             <div>
               <h1 className="text-xl font-semibold text-foreground">File Manager</h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                {currentPath ? `Inside ${currentPath}` : "Root directory"} - {files.length} {files.length === 1 ? "item" : "items"}
+                {currentPath ? `Inside ${currentPath}` : "Root directory"} - {files.length}{" "}
+                {files.length === 1 ? "item" : "items"}
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {currentPath && (
-              <Button type="button" variant="ghost" size="sm" onClick={() => navigateToPath(getParentPath(currentPath))}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => navigateToPath(getParentPath(currentPath))}
+              >
                 <FolderOpen className="size-3.5" />
                 Up One Level
               </Button>
@@ -637,7 +659,8 @@ function AdminPage() {
           onDrop={handleDrop}
         >
           <div className="border-b border-border px-4 py-3 text-sm text-muted-foreground">
-            Drag and drop files here to upload into {currentPath ? `${currentPath}/` : "the root folder"}.
+            Drag and drop files here to upload into{" "}
+            {currentPath ? `${currentPath}/` : "the root folder"}.
           </div>
 
           {files.length === 0 ? (
@@ -669,7 +692,10 @@ function AdminPage() {
                   }}
                 >
                   {file.isFolder ? (
-                    <FolderTree className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+                    <FolderTree
+                      className="size-4 shrink-0 text-muted-foreground"
+                      strokeWidth={1.5}
+                    />
                   ) : (
                     <button
                       type="button"

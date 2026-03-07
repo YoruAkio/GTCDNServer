@@ -11,10 +11,16 @@ import { ADMIN_EMAIL, ADMIN_NAME } from "./constants";
 
 const ADMIN_DEFAULT_PASSWORD = "admin123";
 
+let authInstance: any = null;
 let schemaReady = false;
 let schemaPromise: Promise<void> | null = null;
 let seeded = false;
 let seedPromise: Promise<void> | null = null;
+
+function shouldAutoBootstrap() {
+  const baseURL = ((env as any).BETTER_AUTH_URL as string | undefined) ?? "http://localhost:3000";
+  return baseURL.includes("localhost");
+}
 
 async function ensureSchema(d1: D1Database) {
   if (schemaReady) return;
@@ -34,11 +40,10 @@ async function ensureSchema(d1: D1Database) {
           'create table if not exists "verification" ("id" text not null primary key, "identifier" text not null, "value" text not null, "expiresAt" date not null, "createdAt" date not null, "updatedAt" date not null)',
         ),
         d1.prepare(
-          'create index if not exists "session_userId_idx" on "session" ("userId")',
+          'create table if not exists "folder" ("path" text not null primary key, "createdAt" date not null, "updatedAt" date not null)',
         ),
-        d1.prepare(
-          'create index if not exists "account_userId_idx" on "account" ("userId")',
-        ),
+        d1.prepare('create index if not exists "session_userId_idx" on "session" ("userId")'),
+        d1.prepare('create index if not exists "account_userId_idx" on "account" ("userId")'),
         d1.prepare(
           'create index if not exists "verification_identifier_idx" on "verification" ("identifier")',
         ),
@@ -81,15 +86,7 @@ async function seedAdmin() {
               .prepare(
                 "insert into account (id, accountId, providerId, userId, password, createdAt, updatedAt) values (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
               )
-              .bind(
-                accountId,
-                userId,
-                "credential",
-                userId,
-                passwordHash,
-                now,
-                now,
-              ),
+              .bind(accountId, userId, "credential", userId, passwordHash, now, now),
           ]);
         }
       } finally {
@@ -102,16 +99,16 @@ async function seedAdmin() {
 }
 
 export function createAuth() {
+  if (authInstance) return authInstance;
+
   const d1 = (env as any).D1_DB as D1Database | undefined;
   if (!d1) throw new Error("D1_DB binding not found");
 
-  const baseURL =
-    ((env as any).BETTER_AUTH_URL as string | undefined) ??
-    "http://localhost:3000";
+  const baseURL = ((env as any).BETTER_AUTH_URL as string | undefined) ?? "http://localhost:3000";
 
   const db = new Kysely({ dialect: new D1Dialect({ database: d1 }) });
 
-  return betterAuth({
+  authInstance = betterAuth({
     baseURL,
     database: {
       db,
@@ -124,16 +121,21 @@ export function createAuth() {
     },
     plugins: [tanstackStartCookies()],
   });
+
+  return authInstance;
 }
 
 export async function getAuth() {
-  const d1 = (env as any).D1_DB as D1Database | undefined;
-  if (!d1) throw new Error("D1_DB binding not found");
-
-  await ensureSchema(d1);
-
   const auth = createAuth();
-  await seedAdmin();
+
+  if (shouldAutoBootstrap()) {
+    const d1 = (env as any).D1_DB as D1Database | undefined;
+    if (!d1) throw new Error("D1_DB binding not found");
+
+    await ensureSchema(d1);
+    await seedAdmin();
+  }
+
   return auth;
 }
 
