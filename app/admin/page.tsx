@@ -2,11 +2,14 @@
 
 import { AnimatePresence, motion } from "framer-motion"
 import {
+  Check,
+  ChevronDown,
   ChevronRight,
   FileText,
   FolderOpen,
   FolderPlus,
   FolderTree,
+  LoaderCircle,
   MoreHorizontal,
   MoveRight,
   Upload,
@@ -21,6 +24,7 @@ import RenameFolderModal from "@/components/layout/rename-folder-modal"
 import UploadConflictModal from "@/components/layout/upload-conflict-modal"
 import UploadModal from "@/components/layout/upload-modal"
 import { Button } from "@/components/ui/button"
+import CustomSelect from "@/components/ui/custom-select"
 import { goeyToast } from "@/components/ui/goey-toaster"
 import {
   Modal,
@@ -61,7 +65,6 @@ function AdminPageContent() {
   const [loadingPage, setLoadingPage] = useState(true)
   const [useLocalTime, setUseLocalTime] = useState(false)
 
-  const [files, setFiles] = useState<StorageObject[]>([])
   const [folders, setFolders] = useState<FolderOption[]>([])
   const [requiresPasswordChange, setRequiresPasswordChange] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -80,6 +83,8 @@ function AdminPageContent() {
   const [fileActionsKey, setFileActionsKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [sortType, setSortType] = useState<"name" | "date" | "size">("name")
+  const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [folderModalOpen, setFolderModalOpen] = useState(false)
   const [folderName, setFolderName] = useState("")
@@ -113,20 +118,35 @@ function AdminPageContent() {
   const [newPassword, setNewPassword] = useState("")
   const [changingPassword, setChangingPassword] = useState(false)
   const [passwordError, setPasswordError] = useState<string | null>(null)
+  const adminDataCacheRef = useRef(new Map<string, AdminPageData>())
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const sortMenuRef = useRef<HTMLDivElement>(null)
   const uploadConflictResolverRef = useRef<
     ((action: UploadConflictAction | "cancel") => void) | null
   >(null)
 
+  function applyAdminData(nextData: AdminPageData) {
+    adminDataCacheRef.current.set(nextData.currentPath, nextData)
+    setData(nextData)
+    setRequiresPasswordChange(nextData.requiresPasswordChange)
+  }
+
   useEffect(() => {
     void (async () => {
-      setLoadingPage(true)
+      const cachedData = adminDataCacheRef.current.get(currentPath)
+
+      if (cachedData) {
+        applyAdminData(cachedData)
+        setLoadingPage(false)
+      } else {
+        setLoadingPage(true)
+      }
 
       try {
         const nextData = await fetchJson<AdminPageData>(
           `/api/admin/status?path=${encodeURIComponent(currentPath)}`
         )
-        setData(nextData)
+        applyAdminData(nextData)
       } catch {
         router.replace("/login")
       } finally {
@@ -134,12 +154,6 @@ function AdminPageContent() {
       }
     })()
   }, [currentPath, router])
-
-  useEffect(() => {
-    if (!data) return
-    setFiles(data.files)
-    setRequiresPasswordChange(data.requiresPasswordChange)
-  }, [data])
 
   useEffect(() => {
     setSearchQuery("")
@@ -172,17 +186,83 @@ function AdminPageContent() {
     }
   }, [fileActionsKey])
 
+  useEffect(() => {
+    if (!sortMenuOpen) return
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!sortMenuRef.current?.contains(event.target as Node)) {
+        setSortMenuOpen(false)
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+    }
+  }, [sortMenuOpen])
+
   const breadcrumbs = getBreadcrumbs(currentPath)
+  const currentPageData = useMemo(
+    () =>
+      adminDataCacheRef.current.get(currentPath) ??
+      (data?.currentPath === currentPath ? data : null),
+    [currentPath, data]
+  )
+  const visibleFiles = useMemo(
+    () => currentPageData?.files ?? [],
+    [currentPageData]
+  )
+  const showLoadingShell = loadingPage && !adminDataCacheRef.current.has(currentPath)
   const filteredFiles = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
-    if (!query) return files
+    const nextFiles = !query
+      ? visibleFiles
+      : visibleFiles.filter((file) =>
+          file.name.toLowerCase().includes(query)
+        )
 
-    return files.filter((file) => file.name.toLowerCase().includes(query))
-  }, [files, searchQuery])
+    return nextFiles.toSorted((left, right) => {
+      if (left.isFolder !== right.isFolder) {
+        return left.isFolder ? -1 : 1
+      }
+
+      if (sortType === "date") {
+        if (left.isFolder && right.isFolder) {
+          return left.name.localeCompare(right.name, undefined, {
+            sensitivity: "base",
+          })
+        }
+
+        return (
+          new Date(right.uploaded).getTime() - new Date(left.uploaded).getTime()
+        )
+      }
+
+      if (sortType === "size") {
+        if (left.isFolder && right.isFolder) {
+          return left.name.localeCompare(right.name, undefined, {
+            sensitivity: "base",
+          })
+        }
+
+        return right.size - left.size
+      }
+
+      return left.name.localeCompare(right.name, undefined, {
+        sensitivity: "base",
+      })
+    })
+  }, [visibleFiles, searchQuery, sortType])
   const totalPages = Math.max(
     1,
     Math.ceil(filteredFiles.length / ITEMS_PER_PAGE)
   )
+  const sortLabel =
+    sortType === "name"
+      ? "Name (A-Z)"
+      : sortType === "date"
+        ? "Date"
+        : "Size"
   const paginatedFiles = useMemo(() => {
     const start = (page - 1) * ITEMS_PER_PAGE
     return filteredFiles.slice(start, start + ITEMS_PER_PAGE)
@@ -196,9 +276,7 @@ function AdminPageContent() {
     const nextData = await fetchJson<AdminPageData>(
       `/api/admin/status?path=${encodeURIComponent(currentPath)}`
     )
-    setData(nextData)
-    setFiles(nextData.files)
-    setRequiresPasswordChange(nextData.requiresPasswordChange)
+    applyAdminData(nextData)
   }
 
   async function loadFolders() {
@@ -209,6 +287,15 @@ function AdminPageContent() {
 
   async function navigateToPath(nextPath: string) {
     const normalized = normalizePath(nextPath)
+    const cachedData = adminDataCacheRef.current.get(normalized)
+
+    if (cachedData) {
+      applyAdminData(cachedData)
+      setLoadingPage(false)
+    } else {
+      setLoadingPage(true)
+    }
+
     router.push(
       normalized ? `/admin?path=${encodeURIComponent(normalized)}` : "/admin"
     )
@@ -249,7 +336,12 @@ function AdminPageContent() {
       }
     }
 
-    if (response.status === 409 && payload?.conflict) {
+    if (
+      response.status === 409 &&
+      payload &&
+      "conflict" in payload &&
+      payload.conflict
+    ) {
       return {
         ok: false as const,
         conflict: payload,
@@ -620,35 +712,33 @@ function AdminPageContent() {
     }
   }
 
-  if (loadingPage || !data) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-background px-4">
-        <p className="text-sm text-muted-foreground">Loading dashboard...</p>
-      </main>
-    )
-  }
-
   return (
     <div className="min-h-screen bg-background">
       <Navbar
-        adminProfile={{
-          name: data.session.user.name ?? "Admin",
-          email: data.session.user.email ?? "-",
-          onChangePassword: () => setPasswordModalOpen(true),
-          onSignOut: handleSignOut,
-        }}
+        adminProfile={
+          data
+            ? {
+                name: data.session.user.name ?? "Admin",
+                email: data.session.user.email ?? "-",
+                onChangePassword: () => setPasswordModalOpen(true),
+                onSignOut: handleSignOut,
+              }
+            : undefined
+        }
       />
 
-      <ChangePasswordModal
-        open={requiresPasswordChange || passwordModalOpen}
-        requiresPasswordChange={requiresPasswordChange}
-        newPassword={newPassword}
-        changingPassword={changingPassword}
-        passwordError={passwordError}
-        onOpenChange={setPasswordModalOpen}
-        onNewPasswordChange={setNewPassword}
-        onSubmit={handlePasswordChange}
-      />
+      {data ? (
+        <ChangePasswordModal
+          open={requiresPasswordChange || passwordModalOpen}
+          requiresPasswordChange={requiresPasswordChange}
+          newPassword={newPassword}
+          changingPassword={changingPassword}
+          passwordError={passwordError}
+          onOpenChange={setPasswordModalOpen}
+          onNewPasswordChange={setNewPassword}
+          onSubmit={handlePasswordChange}
+        />
+      ) : null}
 
       <Modal open={folderModalOpen} onOpenChange={setFolderModalOpen}>
         <ModalContent>
@@ -793,27 +883,18 @@ function AdminPageContent() {
           <form onSubmit={handleMoveFile}>
             <ModalBody>
               <div className="space-y-2">
-                <label
-                  htmlFor="move-destination"
-                  className="block text-sm font-medium text-foreground"
-                >
+                <p className="block text-sm font-medium text-foreground">
                   Destination folder
-                </label>
-                <select
-                  id="move-destination"
+                </p>
+                <CustomSelect
                   value={moveDestination}
-                  onChange={(event) => setMoveDestination(event.target.value)}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground transition-colors outline-none focus:border-ring focus:ring-2 focus:ring-ring/50"
-                >
-                  {folders.map((folder) => (
-                    <option
-                      key={folder.key || "root"}
-                      value={folder.key.slice(0, -1)}
-                    >
-                      {formatFolderLabel(folder)}
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={setMoveDestination}
+                  triggerClassName="h-10 rounded-xl px-3 text-sm"
+                  options={folders.map((folder) => ({
+                    label: formatFolderLabel(folder),
+                    value: folder.key.slice(0, -1),
+                  }))}
+                />
               </div>
 
               {moveError ? (
@@ -938,8 +1019,17 @@ function AdminPageContent() {
               </h1>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 {currentPath ? `Inside ${currentPath}` : "Root directory"} -{" "}
-                {filteredFiles.length}{" "}
-                {filteredFiles.length === 1 ? "item" : "items"}
+                {showLoadingShell ? (
+                  <span className="inline-flex items-center gap-2 align-middle">
+                    <LoaderCircle className="size-3.5 animate-spin" />
+                    <span>Loading count...</span>
+                  </span>
+                ) : (
+                  <>
+                    {filteredFiles.length}{" "}
+                    {filteredFiles.length === 1 ? "item" : "items"}
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -950,11 +1040,16 @@ function AdminPageContent() {
               variant="outline"
               size="sm"
               onClick={() => setFolderModalOpen(true)}
+              disabled={showLoadingShell}
             >
               <FolderPlus className="size-3.5" />
               New Folder
             </Button>
-            <Button onClick={openUploadModal} disabled={uploading} size="sm">
+            <Button
+              onClick={openUploadModal}
+              disabled={uploading || showLoadingShell}
+              size="sm"
+            >
               <Upload className="size-3.5" />
               {uploading ? "Uploading..." : "Upload"}
             </Button>
@@ -992,18 +1087,84 @@ function AdminPageContent() {
           onDrop={handleDrop}
         >
           <div className="border-b border-border px-4 py-3">
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(event) => {
-                setSearchQuery(event.target.value)
-                setPage(1)
-              }}
-              placeholder="Search files and folders"
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/50"
-            />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => {
+                  setSearchQuery(event.target.value)
+                  setPage(1)
+                }}
+                placeholder="Search files and folders"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/50"
+                disabled={showLoadingShell}
+              />
+              <div className="flex items-center gap-2 sm:w-auto sm:shrink-0">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Sort
+                </span>
+                <div className="relative" ref={sortMenuRef}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSortMenuOpen((open) => !open)}
+                    disabled={showLoadingShell}
+                    className="min-w-36 justify-between"
+                  >
+                    {sortLabel}
+                    <ChevronDown
+                      className={`size-3.5 transition-transform ${sortMenuOpen ? "rotate-180" : ""}`}
+                    />
+                  </Button>
+
+                  <AnimatePresence>
+                    {sortMenuOpen ? (
+                      <motion.div
+                        className="absolute right-0 top-full z-20 mt-2 w-full rounded-xl border border-border bg-popover p-1 shadow-lg"
+                        initial={{ opacity: 0, y: -6, scale: 0.96 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                        transition={{ duration: 0.16, ease: "easeOut" }}
+                      >
+                        {[
+                          { value: "name" as const, label: "Name (A-Z)" },
+                          { value: "date" as const, label: "Date" },
+                          { value: "size" as const, label: "Size" },
+                        ].map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm transition-colors ${
+                              sortType === option.value
+                                ? "bg-primary text-primary-foreground"
+                                : "text-popover-foreground hover:bg-muted"
+                            }`}
+                            onClick={() => {
+                              setSortType(option.value)
+                              setPage(1)
+                              setSortMenuOpen(false)
+                            }}
+                          >
+                            <span>{option.label}</span>
+                            {sortType === option.value ? (
+                              <Check className="size-3.5" />
+                            ) : null}
+                          </button>
+                        ))}
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>
+                </div>
+              </div>
+            </div>
           </div>
-          {filteredFiles.length === 0 ? (
+          {showLoadingShell ? (
+            <div className="flex flex-col items-center justify-center gap-3 px-6 py-20 text-muted-foreground">
+              <LoaderCircle className="size-8 animate-spin opacity-70" />
+              <p className="text-sm">Loading items...</p>
+            </div>
+          ) : filteredFiles.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 px-6 py-20 text-muted-foreground">
               <FolderOpen className="size-8 opacity-40" />
               <p className="text-sm">

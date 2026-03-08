@@ -1,23 +1,22 @@
 "use client"
 
-import { GooeyToaster as GoeyToasterPrimitive, gooeyToast } from "goey-toast"
-import type { GoeyToasterProps } from "goey-toast"
+import { GooeyToaster, gooeyToast } from "goey-toast"
+import type { GooeyToasterProps } from "goey-toast"
 import "goey-toast/styles.css"
 
 export const goeyToast = gooeyToast
-export type { GoeyToasterProps }
 export type {
-  GoeyToastOptions,
-  GoeyPromiseData,
-  GoeyToastAction,
-  GoeyToastClassNames,
-  GoeyToastTimings,
+  GooeyToastOptions,
+  GooeyPromiseData,
+  GooeyToastAction,
+  GooeyToastClassNames,
+  GooeyToastTimings,
 } from "goey-toast"
 
-function GoeyToaster(props: GoeyToasterProps) {
+function GoeyToaster(props: GooeyToasterProps) {
   return (
     <>
-      <GoeyToasterPrimitive position="top-center" {...props} />
+      <GooeyToaster position="top-center" {...props} />
       <style jsx global>{`
         .gooey-timestamp {
           display: none !important;
@@ -39,7 +38,7 @@ function GoeyToaster(props: GoeyToasterProps) {
         }
       `}</style>
     </>
-  )
+  );
 }
 
 export { GoeyToaster }

@@ -4,6 +4,7 @@ import { motion } from "framer-motion"
 import type * as React from "react"
 
 import { Button } from "@/components/ui/button"
+import CustomSelect from "@/components/ui/custom-select"
 import {
   Modal,
   ModalBody,
@@ -73,28 +74,19 @@ export default function UploadModal({
         <form onSubmit={onSubmit}>
           <ModalBody>
             <div className="space-y-2">
-              <label
-                htmlFor="upload-destination"
-                className="block text-sm font-medium text-foreground"
-              >
+              <p className="block text-sm font-medium text-foreground">
                 Destination folder
-              </label>
-              <select
-                id="upload-destination"
+              </p>
+              <CustomSelect
                 value={uploadDestination}
-                onChange={(event) => onUploadDestinationChange(event.target.value)}
-                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground transition-colors outline-none focus:border-ring focus:ring-2 focus:ring-ring/50"
+                onValueChange={onUploadDestinationChange}
+                triggerClassName="h-10 rounded-xl px-3 text-sm"
                 disabled={uploading}
-              >
-                {folders.map((folder) => (
-                  <option
-                    key={folder.key || "root"}
-                    value={folder.key.slice(0, -1)}
-                  >
-                    {formatFolderLabel(folder)}
-                  </option>
-                ))}
-              </select>
+                options={folders.map((folder) => ({
+                  label: formatFolderLabel(folder),
+                  value: folder.key.slice(0, -1),
+                }))}
+              />
             </div>
 
             <div className="space-y-2">
