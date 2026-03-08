@@ -665,7 +665,7 @@ function AdminPageContent() {
       })
       await refresh()
       goeyToast.success("File renamed.", {
-        description: `"${renameTarget.name}" is now "${renameName.trim()}".`,
+        description: `"${renameTarget.name}" successfully renamed to "${renameName.trim()}".`,
       })
       setRenameTarget(null)
       setRenameName("")
@@ -698,7 +698,7 @@ function AdminPageContent() {
       await refresh()
       await loadFolders()
       goeyToast.success("Folder renamed.", {
-        description: `"${renameFolderTarget.name}" is now "${renameFolderName.trim()}".`,
+        description: `"${renameFolderTarget.name}" successfully renamed to "${renameFolderName.trim()}".`,
       })
       setRenameFolderTarget(null)
       setRenameFolderName("")
@@ -1038,7 +1038,6 @@ function AdminPageContent() {
             <Button
               type="button"
               variant="outline"
-              size="sm"
               onClick={() => setFolderModalOpen(true)}
               disabled={showLoadingShell}
             >
@@ -1048,7 +1047,6 @@ function AdminPageContent() {
             <Button
               onClick={openUploadModal}
               disabled={uploading || showLoadingShell}
-              size="sm"
             >
               <Upload className="size-3.5" />
               {uploading ? "Uploading..." : "Upload"}
