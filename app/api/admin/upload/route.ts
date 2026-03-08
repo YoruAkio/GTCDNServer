@@ -20,12 +20,12 @@ export async function POST(request: Request) {
       (formData.get("key") as string | null) ??
       `${normalizedPath ? `${normalizedPath}/` : ""}${file.name}`
 
-    await uploadFile(
+    const uploadedKey = await uploadFile(
       key,
-      file.stream(),
+      await file.arrayBuffer(),
       file.type || "application/octet-stream"
     )
-    return NextResponse.json({ key })
+    return NextResponse.json({ key: uploadedKey })
   } catch (error) {
     return jsonError(error, 400)
   }

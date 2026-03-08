@@ -5,6 +5,7 @@ import {
   DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
@@ -22,7 +23,10 @@ function normalizePrefix(prefix: string) {
 function getFolderChain(path: string) {
   const normalized = normalizePrefix(path)
   const parts = normalized.split("/").filter(Boolean)
-  return parts.map((_, index) => `${parts.slice(0, index + 1).join("/")}/`)
+  const folderParts = path.trim().endsWith("/") ? parts : parts.slice(0, -1)
+  return folderParts.map(
+    (_, index) => `${folderParts.slice(0, index + 1).join("/")}/`
+  )
 }
 
 function sortEntries(entries: StorageObject[]) {
@@ -75,6 +79,68 @@ function encodeCopySource(bucket: string, key: string) {
   return `${bucket}/${key.split("/").map(encodeURIComponent).join("/")}`
 }
 
+function splitFileKey(key: string) {
+  const slashIndex = key.lastIndexOf("/")
+  const prefix = slashIndex >= 0 ? key.slice(0, slashIndex + 1) : ""
+  const fileName = slashIndex >= 0 ? key.slice(slashIndex + 1) : key
+  const dotIndex = fileName.lastIndexOf(".")
+
+  if (dotIndex <= 0) {
+    return {
+      prefix,
+      name: fileName,
+      extension: "",
+    }
+  }
+
+  return {
+    prefix,
+    name: fileName.slice(0, dotIndex),
+    extension: fileName.slice(dotIndex),
+  }
+}
+
+async function keyExists(client: S3Client, bucket: string, key: string) {
+  try {
+    await client.send(
+      new HeadObjectCommand({
+        Bucket: bucket,
+        Key: key,
+      })
+    )
+    return true
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error &&
+      "$metadata" in error &&
+      typeof error.$metadata === "object" &&
+      error.$metadata &&
+      "httpStatusCode" in error.$metadata &&
+      error.$metadata.httpStatusCode === 404
+    ) {
+      return false
+    }
+
+    throw error
+  }
+}
+
+async function resolveUploadKey(client: S3Client, bucket: string, key: string) {
+  if (!(await keyExists(client, bucket, key))) {
+    return key
+  }
+
+  const { prefix, name, extension } = splitFileKey(key)
+
+  for (let index = 1; ; index++) {
+    const nextKey = `${prefix}${name} (${index})${extension}`
+    if (!(await keyExists(client, bucket, nextKey))) {
+      return nextKey
+    }
+  }
+}
+
 export async function listFiles(prefix = ""): Promise<StorageObject[]> {
   const normalizedPrefix = normalizePrefix(prefix)
   const { bucket, client } = await getStorageClient()
@@ -116,16 +182,41 @@ export async function listFiles(prefix = ""): Promise<StorageObject[]> {
 }
 
 export async function listFolders(): Promise<FolderOption[]> {
-  const folders = await db
-    .select({ path: schema.folder.path })
-    .from(schema.folder)
+  const { bucket, client } = await getStorageClient()
+  const discovered = new Set<string>()
+
+  async function visit(prefix = ""): Promise<void> {
+    const listed = await client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: normalizePrefix(prefix),
+        Delimiter: "/",
+      })
+    )
+
+    const folderKeys = (listed.CommonPrefixes ?? [])
+      .map((folder) => folder.Prefix)
+      .filter((folderKey): folderKey is string => Boolean(folderKey))
+
+    for (const folderKey of folderKeys) {
+      if (discovered.has(folderKey)) continue
+      discovered.add(folderKey)
+      await visit(folderKey)
+    }
+  }
+
+  await visit()
 
   return [
     { key: "", name: "Root" },
-    ...(folders.map((folder) => ({
-      key: folder.path,
-      name: folder.path.slice(0, -1),
-    })) as FolderOption[]),
+    ...Array.from(discovered)
+      .toSorted((a, b) =>
+        a.localeCompare(b, undefined, { sensitivity: "base" })
+      )
+      .map((folderKey) => ({
+        key: folderKey,
+        name: folderKey.slice(0, -1),
+      })),
   ]
 }
 
@@ -133,18 +224,20 @@ export async function uploadFile(
   key: string,
   body: ReadableStream | ArrayBuffer,
   contentType: string
-): Promise<void> {
+): Promise<string> {
   const { bucket, client } = await getStorageClient()
   const payload = body instanceof ArrayBuffer ? new Uint8Array(body) : body
+  const resolvedKey = await resolveUploadKey(client, bucket, key)
   await client.send(
     new PutObjectCommand({
       Bucket: bucket,
-      Key: key,
+      Key: resolvedKey,
       Body: payload,
       ContentType: contentType,
     })
   )
-  await upsertFolders(getFolderChain(key))
+  await upsertFolders(getFolderChain(resolvedKey))
+  return resolvedKey
 }
 
 export async function createFolder(key: string): Promise<void> {

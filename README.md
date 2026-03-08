@@ -42,6 +42,7 @@ bun run db:push
 ### 4. Start the application
 
 Run the app with your preferred local workflow after the environment is ready.
+
 ```bash
 # development mode
 bun run dev

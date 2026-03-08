@@ -30,8 +30,13 @@ interface NavbarProps {
 export default function Navbar({ adminProfile }: NavbarProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const { resolvedTheme, setTheme } = useTheme()
   const profileRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     if (!profileOpen) return
@@ -48,7 +53,7 @@ export default function Navbar({ adminProfile }: NavbarProps) {
     }
   }, [profileOpen])
 
-  const theme = resolvedTheme === "light" ? "light" : "dark"
+  const theme = mounted && resolvedTheme === "light" ? "light" : "dark"
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark")
 
   return (
@@ -86,6 +91,15 @@ export default function Navbar({ adminProfile }: NavbarProps) {
               )}
             >
               Home
+            </Link>
+            <Link
+              href="/admin"
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "sm" }),
+                "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              File Manager
             </Link>
           </nav>
 
@@ -151,24 +165,28 @@ export default function Navbar({ adminProfile }: NavbarProps) {
               </div>
             ) : null}
 
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={toggleTheme}
-              aria-label={
-                theme === "dark"
-                  ? "Switch to light mode"
-                  : "Switch to dark mode"
-              }
-              className="size-9 text-muted-foreground hover:text-foreground"
-            >
-              {theme === "dark" ? (
-                <Sun className="size-4" />
-              ) : (
-                <Moon className="size-4" />
-              )}
-            </Button>
+            {mounted ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={toggleTheme}
+                aria-label={
+                  theme === "dark"
+                    ? "Switch to light mode"
+                    : "Switch to dark mode"
+                }
+                className="size-9 text-muted-foreground hover:text-foreground"
+              >
+                {theme === "dark" ? (
+                  <Sun className="size-4" />
+                ) : (
+                  <Moon className="size-4" />
+                )}
+              </Button>
+            ) : (
+              <div className="size-9" aria-hidden="true" />
+            )}
           </div>
         </div>
       </header>
@@ -223,31 +241,45 @@ export default function Navbar({ adminProfile }: NavbarProps) {
                 >
                   Home
                 </Link>
+                <Link
+                  href="/admin"
+                  onClick={() => setIsOpen(false)}
+                  className={cn(
+                    buttonVariants({ variant: "ghost" }),
+                    "w-full justify-start text-sm"
+                  )}
+                >
+                  File Manager
+                </Link>
               </nav>
 
               <div className="flex items-center justify-between border-t p-4">
                 <span className="font-mono text-xs text-muted-foreground">
                   theme
                 </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={toggleTheme}
-                  className="h-8 gap-2 text-xs"
-                >
-                  {theme === "dark" ? (
-                    <>
-                      <Sun className="size-3.5" />
-                      Light
-                    </>
-                  ) : (
-                    <>
-                      <Moon className="size-3.5" />
-                      Dark
-                    </>
-                  )}
-                </Button>
+                {mounted ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={toggleTheme}
+                    className="h-8 gap-2 text-xs"
+                  >
+                    {theme === "dark" ? (
+                      <>
+                        <Sun className="size-3.5" />
+                        Light
+                      </>
+                    ) : (
+                      <>
+                        <Moon className="size-3.5" />
+                        Dark
+                      </>
+                    )}
+                  </Button>
+                ) : (
+                  <div className="h-8 w-20" aria-hidden="true" />
+                )}
               </div>
             </motion.aside>
           </>
