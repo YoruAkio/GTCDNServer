@@ -1,4 +1,4 @@
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronRight,
@@ -27,13 +27,12 @@ import {
   changeAdminPasswordAction,
   createFolderAction,
   deleteFileAction,
-  getPasswordStatusAction,
+  getAdminPageDataAction,
   listFilesAction,
   listFoldersAction,
   moveFileAction,
   uploadFileAction,
 } from "@/lib/actions";
-import { getSession } from "@/lib/session";
 import type { FolderOption, StorageObject } from "@/lib/storage";
 
 type AdminSearch = {
@@ -51,18 +50,13 @@ export const Route = createFileRoute("/_admin/admin")({
     meta: [{ title: "Admin — GTCDN" }],
   }),
   loader: async ({ deps }) => {
-    const [files, passwordStatus, session] = await Promise.all([
-      listFilesAction({ data: deps.path }),
-      getPasswordStatusAction(),
-      getSession(),
-    ]);
+    const data = await getAdminPageDataAction({ data: deps.path });
 
-    return {
-      currentPath: deps.path,
-      files,
-      requiresPasswordChange: passwordStatus.requiresPasswordChange,
-      session,
-    };
+    if (!data.session) {
+      throw redirect({ to: "/login" });
+    }
+
+    return data;
   },
   component: AdminPage,
 });

@@ -37,21 +37,28 @@ function sortEntries(entries: StorageObject[]) {
   });
 }
 
-async function listAllKeys(prefix = "") {
+async function deleteByPrefix(prefix = "") {
   const bucket = getBucket();
   const normalizedPrefix = normalizePrefix(prefix);
-  const keys: string[] = [];
   let cursor: string | undefined;
+  let deletedAny = false;
 
   while (true) {
     const listed = await bucket.list({ prefix: normalizedPrefix, cursor });
-    keys.push(...listed.objects.map((object) => object.key));
+    const keys = listed.objects.map((object) => object.key);
+
+    if (keys.length > 0) {
+      await bucket.delete(keys as any);
+      deletedAny = true;
+    }
 
     if (!listed.truncated) break;
     cursor = listed.cursor;
   }
 
-  return keys;
+  if (!deletedAny && normalizedPrefix) {
+    await bucket.delete(normalizedPrefix);
+  }
 }
 
 async function upsertFolders(paths: string[]) {
@@ -150,9 +157,7 @@ export async function createFolder(key: string): Promise<void> {
 export async function deleteFile(key: string): Promise<void> {
   const bucket = getBucket();
   if (key.endsWith("/")) {
-    const keys = await listAllKeys(key);
-    const deleteKeys = keys.length > 0 ? keys : [key];
-    await bucket.delete(deleteKeys as any);
+    await deleteByPrefix(key);
     await removeFoldersByPrefix(key);
     return;
   }

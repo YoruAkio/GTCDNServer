@@ -7,7 +7,7 @@ import { env } from "cloudflare:workers";
 import { Kysely } from "kysely";
 import { D1Dialect } from "kysely-d1";
 
-import { ADMIN_EMAIL, ADMIN_NAME } from "./constants";
+import { ADMIN_EMAIL, ADMIN_NAME, ADMIN_PASSWORD_CHANGE_SCOPE } from "./constants";
 
 const ADMIN_DEFAULT_PASSWORD = "admin123";
 
@@ -84,9 +84,18 @@ async function seedAdmin() {
               .bind(userId, ADMIN_NAME, ADMIN_EMAIL, 1, null, now, now),
             d1
               .prepare(
-                "insert into account (id, accountId, providerId, userId, password, createdAt, updatedAt) values (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "insert into account (id, accountId, providerId, userId, password, scope, createdAt, updatedAt) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
               )
-              .bind(accountId, userId, "credential", userId, passwordHash, now, now),
+              .bind(
+                accountId,
+                userId,
+                "credential",
+                userId,
+                passwordHash,
+                ADMIN_PASSWORD_CHANGE_SCOPE,
+                now,
+                now,
+              ),
           ]);
         }
       } finally {
