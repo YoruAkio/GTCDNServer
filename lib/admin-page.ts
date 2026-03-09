@@ -128,3 +128,19 @@ export function getUploadSuccessDescription(filesToUpload: UploadedFileResult[])
 export function getFileNameFromKey(key: string) {
   return key.split("/").pop() || key
 }
+
+export function buildPublicFileUrl(key: string) {
+  const baseUrl = process.env.NEXT_PUBLIC_R2_PUBLIC_URL?.trim()
+
+  if (!baseUrl) {
+    return null
+  }
+
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, "")
+  const encodedKey = key
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/")
+
+  return `${normalizedBaseUrl}/${encodedKey}`
+}

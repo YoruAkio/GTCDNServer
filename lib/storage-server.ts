@@ -305,6 +305,35 @@ export async function createFolder(key: string): Promise<void> {
   await upsertFolders(getFolderChain(normalizedKey))
 }
 
+export async function getDownloadFile(key: string): Promise<{
+  body: ReadableStream
+  contentLength: number
+  contentType: string
+}> {
+  const { bucket, client } = await getStorageClient()
+  const object = await client.send(
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    })
+  )
+
+  if (!object.Body) {
+    throw new Error("File not found")
+  }
+
+  const body =
+    "transformToWebStream" in object.Body
+      ? await object.Body.transformToWebStream()
+      : (object.Body as ReadableStream)
+
+  return {
+    body,
+    contentLength: object.ContentLength ?? 0,
+    contentType: object.ContentType || "application/octet-stream",
+  }
+}
+
 export async function deleteFile(key: string): Promise<void> {
   const { bucket, client } = await getStorageClient()
 

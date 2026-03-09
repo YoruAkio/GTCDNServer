@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Download,
   FileText,
   FolderOpen,
   FolderPlus,
@@ -12,6 +13,8 @@ import {
   LoaderCircle,
   MoreHorizontal,
   MoveRight,
+  PencilLine,
+  Trash2,
   Upload,
 } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
@@ -22,6 +25,7 @@ import Navbar from "@/components/layout/navbar"
 import RenameFileModal from "@/components/layout/rename-file-modal"
 import RenameFolderModal from "@/components/layout/rename-folder-modal"
 import UploadConflictModal from "@/components/layout/upload-conflict-modal"
+import UploadFolderModal from "@/components/layout/upload-folder-modal"
 import UploadModal from "@/components/layout/upload-modal"
 import { Button } from "@/components/ui/button"
 import CustomSelect from "@/components/ui/custom-select"
@@ -43,6 +47,7 @@ import {
   type UploadedFileResult,
   fetchJson,
   formatBytes,
+  buildPublicFileUrl,
   formatFolderLabel,
   formatUploadedDate,
   getFileNameFromKey,
@@ -90,8 +95,13 @@ function AdminPageContent() {
   const [folderName, setFolderName] = useState("")
   const [folderError, setFolderError] = useState<string | null>(null)
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
+  const [uploadFolderModalOpen, setUploadFolderModalOpen] = useState(false)
   const [uploadDestination, setUploadDestination] = useState("")
+  const [uploadFolderDestination, setUploadFolderDestination] = useState("")
   const [uploadQueue, setUploadQueue] = useState<File[]>([])
+  const [uploadFolderQueue, setUploadFolderQueue] = useState<
+    Array<{ file: File; relativePath: string }>
+  >([])
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadConflict, setUploadConflict] = useState<{
     file: File
@@ -120,10 +130,19 @@ function AdminPageContent() {
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const adminDataCacheRef = useRef(new Map<string, AdminPageData>())
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
   const sortMenuRef = useRef<HTMLDivElement>(null)
   const uploadConflictResolverRef = useRef<
     ((action: UploadConflictAction | "cancel") => void) | null
   >(null)
+
+  useEffect(() => {
+    const input = folderInputRef.current
+    if (!input) return
+
+    input.setAttribute("webkitdirectory", "")
+    input.setAttribute("directory", "")
+  }, [uploadFolderModalOpen])
 
   function applyAdminData(nextData: AdminPageData) {
     adminDataCacheRef.current.set(nextData.currentPath, nextData)
@@ -305,10 +324,20 @@ function AdminPageContent() {
     return uploadFilesToPath(filesToUpload, currentPath)
   }
 
+  function getFolderUploadKey(destinationPath: string, relativePath: string) {
+    const normalizedDestination = normalizePath(destinationPath)
+    const normalizedRelativePath = relativePath
+      .replace(/\\/g, "/")
+      .replace(/^\/+/, "")
+
+    return `${normalizedDestination ? `${normalizedDestination}/` : ""}${normalizedRelativePath}`
+  }
+
   async function requestUpload(
     file: File,
     destinationPath: string,
-    conflictAction?: UploadConflictAction
+    conflictAction?: UploadConflictAction,
+    key?: string
   ) {
     const body = new FormData()
     body.append("file", file)
@@ -316,6 +345,10 @@ function AdminPageContent() {
 
     if (conflictAction) {
       body.append("conflictAction", conflictAction)
+    }
+
+    if (key) {
+      body.append("key", key)
     }
 
     const response = await fetch("/api/admin/upload", {
@@ -435,6 +468,89 @@ function AdminPageContent() {
     }
   }
 
+  async function uploadFolderItemsToPath(
+    itemsToUpload: Array<{ file: File; relativePath: string }>,
+    destinationPath: string
+  ) {
+    if (itemsToUpload.length === 0) return false
+
+    setError(null)
+    setUploading(true)
+    setUploadProgress(0)
+
+    try {
+      const uploadedFiles: UploadedFileResult[] = []
+
+      for (const [index, item] of itemsToUpload.entries()) {
+        const baseKey = getFolderUploadKey(destinationPath, item.relativePath)
+        let uploadResult = await requestUpload(
+          item.file,
+          destinationPath,
+          undefined,
+          baseKey
+        )
+
+        if (!uploadResult.ok) {
+          setUploading(false)
+
+          const action = await waitForUploadConflictResolution({
+            file: item.file,
+            destinationPath,
+            existingKey: uploadResult.conflict.key,
+            suggestedKey: uploadResult.conflict.suggestedKey,
+          })
+
+          if (action === "cancel") {
+            return false
+          }
+
+          setUploading(true)
+          uploadResult = await requestUpload(
+            item.file,
+            destinationPath,
+            action,
+            baseKey
+          )
+
+          if (!uploadResult.ok) {
+            throw new Error(uploadResult.conflict.error)
+          }
+        }
+
+        uploadedFiles.push({
+          originalName: item.relativePath,
+          uploadedName: uploadResult.key.replace(
+            `${normalizePath(destinationPath) ? `${normalizePath(destinationPath)}/` : ""}`,
+            ""
+          ),
+        })
+
+        setUploadProgress(
+          Math.round(((index + 1) / itemsToUpload.length) * 100)
+        )
+      }
+
+      await refresh()
+      await loadFolders()
+      goeyToast.success("Upload completed.", {
+        description:
+          itemsToUpload.length === 1
+            ? `"${uploadedFiles[0]?.uploadedName ?? uploadedFiles[0]?.originalName ?? "file"}" has been uploaded successfully.`
+            : `${itemsToUpload.length} files has been upload successfully.`,
+      })
+      return true
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Upload failed"
+      setError(message)
+      goeyToast.error(message)
+      return false
+    } finally {
+      setUploading(false)
+      if (folderInputRef.current) folderInputRef.current.value = ""
+      setDragActive(false)
+    }
+  }
+
   async function handleDrop(event: React.DragEvent<HTMLDivElement>) {
     event.preventDefault()
     setDragOverFolderKey(null)
@@ -458,6 +574,16 @@ function AdminPageContent() {
     setUploadModalOpen(true)
   }
 
+  async function openUploadFolderModal() {
+    setError(null)
+    setUploadFolderQueue([])
+    setUploadProgress(0)
+    setUploadConflict(null)
+    setUploadFolderDestination(currentPath)
+    await loadFolders()
+    setUploadFolderModalOpen(true)
+  }
+
   function handleUploadQueueChange(event: React.ChangeEvent<HTMLInputElement>) {
     const nextFiles = Array.from(event.target.files ?? [])
     if (nextFiles.length === 0) return
@@ -476,6 +602,41 @@ function AdminPageContent() {
             file.lastModified === fileToRemove.lastModified
           )
       )
+    )
+  }
+
+  function handleUploadFolderQueueChange(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const nextFiles = Array.from(event.target.files ?? [])
+    if (nextFiles.length === 0) return
+
+    setUploadFolderQueue((current) => {
+      const merged = [...current]
+
+      for (const file of nextFiles) {
+        const relativePath =
+          file.webkitRelativePath?.replace(/\\/g, "/") || file.name
+        const exists = merged.some(
+          (item) =>
+            item.relativePath === relativePath &&
+            item.file.size === file.size &&
+            item.file.lastModified === file.lastModified
+        )
+
+        if (!exists) {
+          merged.push({ file, relativePath })
+        }
+      }
+
+      return merged
+    })
+    event.target.value = ""
+  }
+
+  function removeUploadFolderQueueItem(relativePath: string) {
+    setUploadFolderQueue((current) =>
+      current.filter((item) => item.relativePath !== relativePath)
     )
   }
 
@@ -530,6 +691,43 @@ function AdminPageContent() {
     }
   }
 
+  async function handleDownloadFile(key: string) {
+    const url = buildPublicFileUrl(key)
+
+    if (!url) {
+      goeyToast.error("Download unavailable.", {
+        description: "Set NEXT_PUBLIC_R2_PUBLIC_URL to enable direct downloads.",
+      })
+      return
+    }
+
+    try {
+      const response = await fetch(url, { cache: "no-store" })
+
+      if (!response.ok) {
+        throw new Error("Failed to download file")
+      }
+
+      const blob = await response.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = objectUrl
+      anchor.download = getFileNameFromKey(key)
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(objectUrl)
+      setFileActionsKey(null)
+    } catch (downloadError) {
+      goeyToast.error("Download failed.", {
+        description:
+          downloadError instanceof Error
+            ? downloadError.message
+            : "Failed to download file.",
+      })
+    }
+  }
+
   function openRenameModal(file: StorageObject) {
     setRenameTarget(file)
     setRenameName(file.name)
@@ -556,6 +754,17 @@ function AdminPageContent() {
     if (!ok) return
     setUploadQueue([])
     setUploadModalOpen(false)
+  }
+
+  async function handleUploadFolderSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    const ok = await uploadFolderItemsToPath(
+      uploadFolderQueue,
+      uploadFolderDestination
+    )
+    if (!ok) return
+    setUploadFolderQueue([])
+    setUploadFolderModalOpen(false)
   }
 
   async function openMoveModal(fileKey: string) {
@@ -818,6 +1027,29 @@ function AdminPageContent() {
         formatBytes={formatBytes}
       />
 
+      <UploadFolderModal
+        open={uploadFolderModalOpen}
+        onOpenChange={(open) => {
+          setUploadFolderModalOpen(open)
+
+          if (!open) {
+            resolveUploadConflict("cancel")
+          }
+        }}
+        folders={folders}
+        uploadDestination={uploadFolderDestination}
+        onUploadDestinationChange={setUploadFolderDestination}
+        uploading={uploading}
+        uploadQueue={uploadFolderQueue}
+        uploadProgress={uploadProgress}
+        folderInputRef={folderInputRef}
+        onFolderChange={handleUploadFolderQueueChange}
+        onRemoveItem={removeUploadFolderQueueItem}
+        onSubmit={handleUploadFolderSubmit}
+        formatFolderLabel={formatFolderLabel}
+        formatBytes={formatBytes}
+      />
+
       <UploadConflictModal
         open={!!uploadConflict}
         fileName={getFileNameFromKey(uploadConflict?.existingKey ?? "")}
@@ -1051,6 +1283,15 @@ function AdminPageContent() {
               <Upload className="size-3.5" />
               {uploading ? "Uploading..." : "Upload"}
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={showLoadingShell}
+              onClick={openUploadFolderModal}
+            >
+              <FolderOpen className="size-3.5" />
+              Upload Folder
+            </Button>
           </div>
         </div>
 
@@ -1172,7 +1413,7 @@ function AdminPageContent() {
               </p>
             </div>
           ) : (
-            <div className="overflow-hidden">
+            <div className="overflow-visible">
               {currentPath && page === 1 && !searchQuery ? (
                 <div
                   className={`px-4 py-3 ${paginatedFiles.length > 0 ? "border-b border-border" : ""} ${dragOverFolderKey === ".." ? "bg-primary/10" : ""}`}
@@ -1336,8 +1577,17 @@ function AdminPageContent() {
                               <button
                                 type="button"
                                 className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-popover-foreground transition-colors hover:bg-muted"
+                                onClick={() => handleDownloadFile(file.key)}
+                              >
+                                <Download className="mr-2 size-3.5" />
+                                Download file
+                              </button>
+                              <button
+                                type="button"
+                                className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-popover-foreground transition-colors hover:bg-muted"
                                 onClick={() => openRenameModal(file)}
                               >
+                                <PencilLine className="mr-2 size-3.5" />
                                 Rename file
                               </button>
                               <button
@@ -1348,6 +1598,7 @@ function AdminPageContent() {
                                   setFileActionsKey(null)
                                 }}
                               >
+                                <Trash2 className="mr-2 size-3.5" />
                                 Remove
                               </button>
                             </motion.div>
@@ -1387,6 +1638,7 @@ function AdminPageContent() {
                               className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-popover-foreground transition-colors hover:bg-muted"
                               onClick={() => openRenameFolderModal(file)}
                             >
+                              <PencilLine className="mr-2 size-3.5" />
                               Rename folder
                             </button>
                             <button
@@ -1397,6 +1649,7 @@ function AdminPageContent() {
                                 setFileActionsKey(null)
                               }}
                             >
+                              <Trash2 className="mr-2 size-3.5" />
                               Remove
                             </button>
                           </motion.div>
