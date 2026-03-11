@@ -695,7 +695,7 @@ function AdminPageContent() {
       const merged = [...current]
 
       for (const file of nextFiles) {
-        const relativePath =
+        const relativePath = 3
           file.webkitRelativePath?.replace(/\\/g, "/") || file.name
         const exists = merged.some(
           (item) =>
