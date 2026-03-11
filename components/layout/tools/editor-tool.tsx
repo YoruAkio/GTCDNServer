@@ -46,7 +46,7 @@ const FIELD_GROUPS: { label: string; fields: (keyof ItemEntry)[] }[] = [
 
 // @note returns true for fields that should be read-only in the editor
 function isReadOnly(field: keyof ItemEntry): boolean {
-  return field === "texture_hash" || field === "extra_file_hash" || field === "data_position_80"
+  return field === "data_position_80"
 }
 
 function fieldLabel(key: string): string {

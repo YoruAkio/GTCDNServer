@@ -2,7 +2,9 @@
 
 import { useCallback, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
+import { Download } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
 import {
   decodeItemsDat,
   encodeItemsDat,
@@ -14,11 +16,17 @@ import { DropZone, saveBlob, SegmentedControl, StatGrid, StatusBadge, type Statu
 
 type Direction = "decode" | "encode"
 type Format = "json" | "txt"
+type DownloadPayload = {
+  data: BlobPart
+  fileName: string
+  mime?: string
+}
 
 export function ConverterTool() {
   const [direction, setDirection] = useState<Direction>("decode")
   const [format, setFormat] = useState<Format>("json")
   const [status, setStatus] = useState<Status>({ type: "idle" })
+  const [lastDownload, setLastDownload] = useState<DownloadPayload | null>(null)
   const [decodeStats, setDecodeStats] = useState<{
     version: number
     item_count: number
@@ -29,18 +37,21 @@ export function ConverterTool() {
     setDirection(d)
     setStatus({ type: "idle" })
     setDecodeStats(null)
+    setLastDownload(null)
   }
 
   const handleFormatChange = (f: Format) => {
     setFormat(f)
     setStatus({ type: "idle" })
     setDecodeStats(null)
+    setLastDownload(null)
   }
 
   const handleFile = useCallback(
     (file: File) => {
       setStatus({ type: "idle" })
       setDecodeStats(null)
+      setLastDownload(null)
 
       if (direction === "decode") {
         const reader = new FileReader()
@@ -52,7 +63,13 @@ export function ConverterTool() {
 
             if (format === "json") {
               const json = JSON.stringify(data, null, 2)
-              saveBlob(json, "items.json", "application/json")
+              const nextDownload = {
+                data: json,
+                fileName: "items.json",
+                mime: "application/json",
+              } satisfies DownloadPayload
+              saveBlob(nextDownload.data, nextDownload.fileName, nextDownload.mime)
+              setLastDownload(nextDownload)
               setDecodeStats({
                 version: data.version,
                 item_count: data.item_count,
@@ -74,7 +91,13 @@ export function ConverterTool() {
                 })
                 .join("\n")
               const txt = header + lines
-              saveBlob(txt, "items.txt", "text/plain")
+              const nextDownload = {
+                data: txt,
+                fileName: "items.txt",
+                mime: "text/plain",
+              } satisfies DownloadPayload
+              saveBlob(nextDownload.data, nextDownload.fileName, nextDownload.mime)
+              setLastDownload(nextDownload)
               setDecodeStats({
                 version: data.version,
                 item_count: data.item_count,
@@ -104,7 +127,12 @@ export function ConverterTool() {
               const data: ItemsDat = JSON.parse(text)
               buf = encodeItemsDat(data)
               const hash = protonHash(buf)
-              saveBlob(buf.buffer as ArrayBuffer, "items.dat")
+              const nextDownload = {
+                data: buf.buffer.slice(0),
+                fileName: "items.dat",
+              } satisfies DownloadPayload
+              saveBlob(nextDownload.data, nextDownload.fileName)
+              setLastDownload(nextDownload)
               setStatus({
                 type: "success",
                 message: `Encoded ${data.item_count.toLocaleString()} items — items.dat downloaded (hash: ${hash >>> 0})`,
@@ -112,7 +140,12 @@ export function ConverterTool() {
             } else {
               buf = encodeItemsDatFromTxt(text)
               const hash = protonHash(buf)
-              saveBlob(buf.buffer as ArrayBuffer, "items.dat")
+              const nextDownload = {
+                data: buf.buffer.slice(0),
+                fileName: "items.dat",
+              } satisfies DownloadPayload
+              saveBlob(nextDownload.data, nextDownload.fileName)
+              setLastDownload(nextDownload)
               setStatus({
                 type: "success",
                 message: `Encoded from TXT — items.dat downloaded (hash: ${hash >>> 0})`,
@@ -211,7 +244,27 @@ export function ConverterTool() {
       />
 
       <AnimatePresence>
-        <StatusBadge status={status} />
+        {status.type === "success" && lastDownload ? (
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="flex flex-wrap items-center gap-2 rounded-lg bg-green-500/10 px-4 py-2.5 text-sm text-green-600 dark:text-green-400"
+          >
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 rounded-full px-3 text-xs shadow-none"
+              onClick={() => saveBlob(lastDownload.data, lastDownload.fileName, lastDownload.mime)}
+            >
+              <Download className="size-3.5" />
+              Redownload
+            </Button>
+            <span>{status.message}</span>
+          </motion.div>
+        ) : (
+          <StatusBadge status={status} />
+        )}
       </AnimatePresence>
 
       {decodeStats && status.type === "success" && (

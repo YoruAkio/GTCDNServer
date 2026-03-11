@@ -9,6 +9,7 @@ import {
   FileEdit,
   Hash,
   ImageIcon,
+  ScanSearch,
 } from "lucide-react"
 
 import Navbar from "@/components/layout/navbar"
@@ -16,6 +17,7 @@ import { ConverterTool } from "@/components/layout/tools/converter-tool"
 import { HashTool } from "@/components/layout/tools/hash-tool"
 import { EditorTool } from "@/components/layout/tools/editor-tool"
 import { RttexTool } from "@/components/layout/tools/rttex-tool"
+import { ResizeImageTool } from "@/components/layout/tools/resize-image-tool"
 
 // ─── nav config ──────────────────────────────────────────────────────────────
 
@@ -32,11 +34,12 @@ const toolGroups = [
     title: "Media Tools",
     items: [
       { label: "RTTEX Converter", id: "rttex", icon: ImageIcon },
+      { label: "Resize Image", id: "resize-image", icon: ScanSearch },
     ],
   },
 ]
 
-type ToolId = "converter" | "hash" | "editor" | "rttex"
+type ToolId = "converter" | "hash" | "editor" | "rttex" | "resize-image"
 
 const toolMeta: Record<
   ToolId,
@@ -65,6 +68,12 @@ const toolMeta: Record<
     eyebrow: "Media Tools",
     title: "RTTEX Converter",
     description: "Convert RTTEX textures to PNG and back",
+  },
+  "resize-image": {
+    icon: ScanSearch,
+    eyebrow: "Media Tools",
+    title: "Resize Image",
+    description: "Resize images into clean PNG exports with pixel or smooth scaling",
   },
 }
 
@@ -200,6 +209,8 @@ export default function ToolsPage() {
                       <HashTool />
                     ) : activeTool === "rttex" ? (
                       <RttexTool />
+                    ) : activeTool === "resize-image" ? (
+                      <ResizeImageTool />
                     ) : (
                       <EditorTool />
                     )}
