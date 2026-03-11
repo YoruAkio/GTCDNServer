@@ -20,43 +20,51 @@ management, file moves, and deletes.
 
 ## How to Use
 
-### 1. Install dependencies
+### 1. Fork the repository
+
+Fork this repo from [YoruAkio/GTCDNServer](https://github.com/YoruAkio/GTCDNServer).
+
+### 2. Set up Vercel
+
+Import your fork into Vercel and create a new project.
+
+### 3. Configure the environment
+
+Set up the services below before deploying:
+
+#### Neon PostgreSQL
+
+- Create a Neon PostgreSQL database
+- Connect it to Vercel, or copy the database URL into your Vercel environment variables
+- Create or push the required database tables from your Neon / migration flow
+
+#### Better Auth secret
+
+Generate a secure secret:
 
 ```bash
-bun install
+openssl rand -hex 32
 ```
 
-### 2. Set up your environment
+Use that value for your Better Auth secret environment variable.
 
-Copy the `.env.example` file to `.env` and fill in the required values.
+#### Cloudflare R2
 
-### 3. Set up the database
+- Create your R2 bucket
+- Collect the required bucket configuration
+- Add all R2 environment variables in Vercel
+- If you want direct public downloads, also set up your public R2/custom domain URL
 
-Apply the schema with Drizzle:
+### 4. Deploy to Vercel
 
-```bash
-bun run db:generate
-bun run db:push
-```
+After your database, auth secret, and R2 settings are ready, deploy the project from Vercel.
 
-### 4. Start the application
-
-Run the app with your preferred local workflow after the environment is ready.
-
-```bash
-# development mode
-bun run dev
-
-# production mode
-bun run build
-bun run start
-```
+### 5. First login
 
 On localhost, the project can create a default admin account automatically.
 
-Admin account default password is `admin123`.
-
-You will be asked to change the password after the first login.
+- default password: `admin123`
+- you will be asked to change the password after the first login
 
 ## Contribution
 
