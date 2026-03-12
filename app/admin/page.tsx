@@ -10,6 +10,7 @@ import {
   FolderOpen,
   FolderPlus,
   FolderTree,
+  HelpCircle,
   LoaderCircle,
   MoreHorizontal,
   MoveRight,
@@ -166,6 +167,7 @@ function AdminPageContent() {
   const [newPassword, setNewPassword] = useState("")
   const [changingPassword, setChangingPassword] = useState(false)
   const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [howToUseModalOpen, setHowToUseModalOpen] = useState(false)
   const adminDataCacheRef = useRef(new Map<string, AdminPageData>())
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
@@ -1327,6 +1329,45 @@ function AdminPageContent() {
         </ModalContent>
       </Modal>
 
+      <Modal open={howToUseModalOpen} onOpenChange={setHowToUseModalOpen}>
+        <ModalContent className="max-w-lg">
+          <ModalHeader>
+            <ModalTitle>How to use</ModalTitle>
+          </ModalHeader>
+          <ModalBody className="space-y-5">
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium text-foreground">Uploading files</p>
+              <p className="text-sm text-muted-foreground">
+                Click <span className="font-medium text-foreground">Upload</span> to add individual files or{" "}
+                <span className="font-medium text-foreground">Upload Folder</span> to upload an entire folder at once.
+                You can also drag and drop files directly onto the file list.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium text-foreground">Managing files</p>
+              <p className="text-sm text-muted-foreground">
+                Hover over a file and click the <span className="font-medium text-foreground">...</span> menu to rename,
+                move, download, or delete it. Folders can be navigated by clicking their name.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium text-foreground">Public file URL</p>
+              <p className="text-sm text-muted-foreground">
+                Files are publicly accessible at:
+              </p>
+              <div className="rounded-lg border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground break-all">
+                {process.env.NEXT_PUBLIC_R2_PUBLIC_URL
+                  ? `${process.env.NEXT_PUBLIC_R2_PUBLIC_URL.replace(/\/+$/, "")}/<file-path>`
+                  : <span className="text-destructive">NEXT_PUBLIC_R2_PUBLIC_URL is not set</span>}
+              </div>
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button onClick={() => setHowToUseModalOpen(false)}>Close</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
       <motion.main
         className="mx-auto max-w-5xl space-y-8 px-6 py-10"
         initial={{ opacity: 0, y: 14 }}
@@ -1411,6 +1452,15 @@ function AdminPageContent() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setHowToUseModalOpen(true)}
+              title="How to use"
+            >
+              <HelpCircle className="size-4" />
+            </Button>
             <Button
               type="button"
               variant="outline"
